@@ -107,13 +107,14 @@ toolTip:"Incremental Save 2026"
 		local cfg_sep    =  isReadSetting "sepSym"    "_V-"
 		local cfg_pad    = (isReadSetting "padLen"    "3") as integer
 		local cfg_doCmt  = (isReadSetting "doCmt"    "false") == "true"
-		local cfg_cmt    = ""
+		-- global needed: rollouts cannot close over outer locals in MaxScript
+		global incrementalSave_cmt = ""
 
 		rollout fileCommentRO "File Comments" (
-			editText cmtField fieldWidth:400 height:100 text:cfg_cmt
+			editText cmtField fieldWidth:400 height:100 text:incrementalSave_cmt
 			button btn_ok "OK" width:100
 			on btn_ok pressed do (
-				cfg_cmt = cmtField.text
+				incrementalSave_cmt = cmtField.text
 				destroyDialog fileCommentRO
 			)
 		)
@@ -170,9 +171,9 @@ toolTip:"Incremental Save 2026"
 		-- Collect file comments before saving
 		if cfg_doCmt then (
 			local propNo = fileProperties.findProperty #summary "Comments"
-			if propNo > 0 then cfg_cmt = fileProperties.getPropertyValue #summary propNo else cfg_cmt = ""
+			if propNo > 0 then incrementalSave_cmt = fileProperties.getPropertyValue #summary propNo else incrementalSave_cmt = ""
 			createDialog fileCommentRO modal:true width:440 height:155
-			fileProperties.addProperty #summary "Comments" cfg_cmt
+			fileProperties.addProperty #summary "Comments" incrementalSave_cmt
 		)
 
 		-- New unsaved scene — fall back to normal Save As
