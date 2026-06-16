@@ -100,15 +100,15 @@ toolTip:"Incremental Save 2026"
 	)
 
 	on execute do (
-		-- Read settings from INI (survive Max crashes and version upgrades)
-		local cfg_debug  = (isReadSetting "debug"    "false") == "true"
-		local cfg_subDir = (isReadSetting "subDir"   "true")  == "true"
-		local cfg_ext    =  isReadSetting "subDirExt" ".bak"
-		local cfg_sep    =  isReadSetting "sepSym"    "_V-"
-		local cfg_pad    = (isReadSetting "padLen"    "3") as integer
-		local cfg_doCmt  = (isReadSetting "doCmt"    "false") == "true"
-		-- global needed: rollouts cannot close over outer locals in MaxScript
-		global incrementalSave_cmt = ""
+		-- Rollouts cannot close over outer locals in MaxScript — all shared state must be global.
+		-- Prefixed with incrementalSave_ to avoid namespace collisions.
+		global incrementalSave_debug  = (isReadSetting "debug"    "false") == "true"
+		global incrementalSave_subDir = (isReadSetting "subDir"   "true")  == "true"
+		global incrementalSave_ext    =  isReadSetting "subDirExt" ".bak"
+		global incrementalSave_sep    =  isReadSetting "sepSym"    "_V-"
+		global incrementalSave_pad    = (isReadSetting "padLen"    "3") as integer
+		global incrementalSave_doCmt  = (isReadSetting "doCmt"    "false") == "true"
+		global incrementalSave_cmt    = ""
 
 		rollout fileCommentRO "File Comments" (
 			editText cmtField fieldWidth:400 height:100 text:incrementalSave_cmt
@@ -120,39 +120,39 @@ toolTip:"Incremental Save 2026"
 		)
 
 		rollout settingsRO "IncrementalSave v1.0 — Settings" (
-			checkbox chk_subDir "Save old versions in subdirectory" checked:cfg_subDir
-			edittext fld_ext "Subdirectory suffix:" text:cfg_ext enabled:cfg_subDir fieldWidth:70 align:#right
-			edittext fld_sep "Version number prefix:" text:cfg_sep fieldWidth:70 align:#right
+			checkbox chk_subDir "Save old versions in subdirectory" checked:incrementalSave_subDir
+			edittext fld_ext "Subdirectory suffix:" text:incrementalSave_ext enabled:incrementalSave_subDir fieldWidth:70 align:#right
+			edittext fld_sep "Version number prefix:" text:incrementalSave_sep fieldWidth:70 align:#right
 			label lbl_pad "Version number padding:" across:2 align:#left
-			spinner spn_pad range:[2,10,cfg_pad] type:#integer fieldWidth:42 align:#right
-			checkbox chk_cmt   "Add file comments on save"       checked:cfg_doCmt
-			checkbox chk_debug "Print debug info to Listener"    checked:cfg_debug
+			spinner spn_pad range:[2,10,incrementalSave_pad] type:#integer fieldWidth:42 align:#right
+			checkbox chk_cmt   "Add file comments on save"    checked:incrementalSave_doCmt
+			checkbox chk_debug "Print debug info to Listener" checked:incrementalSave_debug
 			group "Filename preview:" ( label lbl_prev "" )
 			button btn_ok "OK" width:60
 
 			fn refreshPreview = (
 				local s = "myScene"
-				if cfg_subDir then s += (cfg_ext + "\\" + s)
-				s += cfg_sep
-				for i = 2 to cfg_pad do s += "0"
+				if incrementalSave_subDir then s += (incrementalSave_ext + "\\" + s)
+				s += incrementalSave_sep
+				for i = 2 to incrementalSave_pad do s += "0"
 				s += "1.max"
 				lbl_prev.text = s
 			)
 
 			on settingsRO open   do refreshPreview()
-			on chk_subDir changed val do ( cfg_subDir = val; fld_ext.enabled = val; refreshPreview() )
-			on fld_ext    changed val do ( cfg_ext = val; refreshPreview() )
-			on fld_sep    changed val do ( cfg_sep = val; refreshPreview() )
-			on spn_pad    changed val do ( cfg_pad = val as integer; refreshPreview() )
-			on chk_cmt    changed val do   cfg_doCmt = val
-			on chk_debug  changed val do   cfg_debug = val
+			on chk_subDir changed val do ( incrementalSave_subDir = val; fld_ext.enabled = val; refreshPreview() )
+			on fld_ext    changed val do ( incrementalSave_ext = val; refreshPreview() )
+			on fld_sep    changed val do ( incrementalSave_sep = val; refreshPreview() )
+			on spn_pad    changed val do ( incrementalSave_pad = val as integer; refreshPreview() )
+			on chk_cmt    changed val do   incrementalSave_doCmt = val
+			on chk_debug  changed val do   incrementalSave_debug = val
 			on btn_ok pressed do (
-				writeSetting "debug"     cfg_debug
-				writeSetting "subDir"    cfg_subDir
-				writeSetting "subDirExt" cfg_ext
-				writeSetting "sepSym"    cfg_sep
-				writeSetting "padLen"    cfg_pad
-				writeSetting "doCmt"     cfg_doCmt
+				writeSetting "debug"     incrementalSave_debug
+				writeSetting "subDir"    incrementalSave_subDir
+				writeSetting "subDirExt" incrementalSave_ext
+				writeSetting "sepSym"    incrementalSave_sep
+				writeSetting "padLen"    incrementalSave_pad
+				writeSetting "doCmt"     incrementalSave_doCmt
 				destroyDialog settingsRO
 			)
 		)
@@ -169,7 +169,7 @@ toolTip:"Incremental Save 2026"
 		if not cont then return undefined
 
 		-- Collect file comments before saving
-		if cfg_doCmt then (
+		if incrementalSave_doCmt then (
 			local propNo = fileProperties.findProperty #summary "Comments"
 			if propNo > 0 then incrementalSave_cmt = fileProperties.getPropertyValue #summary propNo else incrementalSave_cmt = ""
 			createDialog fileCommentRO modal:true width:440 height:155
@@ -201,9 +201,9 @@ toolTip:"Incremental Save 2026"
 
 		-- Build backup base path (no extension)
 		local baseName  = getFilenameFile maxFileName
-		local backupDir = if cfg_subDir then (maxFilePath + baseName + cfg_ext) else maxFilePath
+		local backupDir = if incrementalSave_subDir then (maxFilePath + baseName + incrementalSave_ext) else maxFilePath
 
-		if cfg_subDir and not doesFileExist backupDir then (
+		if incrementalSave_subDir and not doesFileExist backupDir then (
 			if not (makeDir backupDir) then (
 				format "IncrementalSave: could not create %, falling back to scene dir\n" backupDir
 				backupDir = maxFilePath
@@ -212,17 +212,17 @@ toolTip:"Incremental Save 2026"
 
 		local backupBase = backupDir + "\\" + baseName
 
-		if cfg_debug then format "IncrementalSave: backupBase = %\n" backupBase
+		if incrementalSave_debug then format "IncrementalSave: backupBase = %\n" backupBase
 
 		-- Find highest existing version via regex (not limited to current padding width)
-		local nextNr      = (findHighestVersion backupBase cfg_sep) + 1
-		local backupFile  = backupBase + cfg_sep + (padNumber nextNr cfg_pad) + ".max"
-		local tempFile    = maxFilePath + baseName + "_ISAVE_TMP_.max"
+		local nextNr     = (findHighestVersion backupBase incrementalSave_sep) + 1
+		local backupFile = backupBase + incrementalSave_sep + (padNumber nextNr incrementalSave_pad) + ".max"
+		local tempFile   = maxFilePath + baseName + "_ISAVE_TMP_.max"
 
-		if cfg_debug then format "IncrementalSave: backup target = %\n" backupFile
+		if incrementalSave_debug then format "IncrementalSave: backup target = %\n" backupFile
 
 		-- === Atomic rotate ===
-		-- Step 1: save to temp and verify — current canonical file is untouched until we know the save worked
+		-- Step 1: save to temp and verify — canonical file is untouched until we know the save worked
 		if not (verifiedSaveFile tempFile) then return undefined
 
 		-- Step 2: rename canonical → versioned backup
@@ -235,7 +235,7 @@ toolTip:"Incremental Save 2026"
 
 		-- Step 3: promote temp → canonical name
 		if not (renameFile tempFile currentFile) then (
-			messageBox ("Temp rename failed.\n\nBackup at: " + backupFile + "\nTemp at:   " + tempFile + "\n\nRename temp to restore your scene file.") \
+			messageBox ("Temp rename failed.\n\nBackup at: " + backupFile + "\nTemp at:   " + tempFile + "\n\nRename temp manually to restore your scene.") \
 				title:"IncrementalSave Error #6" beep:true
 			setSaveRequired true
 			return undefined
