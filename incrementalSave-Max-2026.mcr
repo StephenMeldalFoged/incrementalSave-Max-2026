@@ -157,7 +157,7 @@ toolTip:"Incremental Save 2026"
 			)
 		)
 
-		format "IncrementalSave v1.0\n"
+		format "IncrementalSave v1.0 — Modernized 2026 by Stephen Foged (based on v0.5 by M. Breidt)\n"
 
 		-- ALT opens settings dialog (v0.5 had this comment wrong — it said CTRL)
 		if keyboard.altPressed then createDialog settingsRO 310 230 modal:true
