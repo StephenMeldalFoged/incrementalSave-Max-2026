@@ -28,8 +28,8 @@
 
 macroScript incrementalSave
 category:"Eski Tools"
-buttonText:"Incremental Save"
-toolTip:"Incremental Save"
+buttonText:"Incremental Save 2026"
+toolTip:"Incremental Save 2026"
 (
 	local iniPath = (getDir #userScripts) + "\\incrementalSave.ini"
 
