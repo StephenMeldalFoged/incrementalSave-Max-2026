@@ -1,22 +1,27 @@
--- Incremental Save v1.0
+-- Incremental Save v1.1
 -- Original v0.5 (c) 2003 M. Breidt (martin@breidt.net)
 -- Modernized 2026 by Stephen Foged for 3ds Max 2027.1
 --
 -- What changed from v0.5:
 --   FIXED  ALT opens settings dialog (docs said CTRL, code checked altPressed — now consistent)
 --   FIXED  comment_txt was a leaked implicit global; now scoped to execute handler
---   FIXED  version number extracted as integer, not float — prevents _V-1.5 edge case
+--   FIXED  version number extracted as integer, not float — prevents -V-1.5 edge case
 --   FIXED  glob wildcard capped discovery at padding width; dotNet regex scan finds any width
---   FIXED  crash window between rename and save eliminated by atomic temp-file pattern
 --   NEW    getFileSize replaces manual fOpen/fseek/ftell binary stream dance
---   NEW    INI persistence via setINISetting/getINISetting replaces persistent globals
---          (persistent globals reset on Max crash or major version upgrade)
+--   NEW    persistent locals replace INI file and persistent globals
+--          (persistent locals survive session restarts via Max's own preference store)
 --
--- How the atomic save works:
---   1. Save scene to a temp file in the scene directory — verify it
---   2. Rename current .max → versioned backup (shot06-comp.max → shot06-comp_V-004.max)
---   3. Rename temp → canonical name (shot06-comp.max)
---   At no point is the canonical filename absent from disk.
+-- What changed from v1.0:
+--   FIXED  temp file (_ISAVE_TMP_.max) was appearing in Open Recent menu — saveMaxFile
+--          registers every path it writes; eliminated temp file entirely to fix this.
+--   FIXED  scene was saved twice per invocation — second save was needed only to
+--          re-anchor Max's internal file pointer after the temp→canonical rename.
+--          New approach saves once to canonical, copies to backup via dotNet File.Copy.
+--
+-- How the save works (v1.1):
+--   1. saveMaxFile to canonical name — Max's pointer stays on the right file, title bar unchanged
+--   2. dotNet File.Copy canonical → versioned backup
+--   One save. No temp file. No recent-menu pollution.
 --
 -- Installation:
 --   Copy to %LOCALAPPDATA%\Autodesk\3dsMax\<version>\ENU\scripts\startup\
@@ -31,14 +36,12 @@ category:"Eski Tools"
 buttonText:"Incremental Save 2026"
 toolTip:"Incremental Save 2026"
 (
-	local iniPath = (getDir #userScripts) + "\\incrementalSave.ini"
-
-	fn isReadSetting key default = (
-		local v = getINISetting iniPath "IncrementalSave" key
-		if v == "" then default else v
-	)
-
-	fn writeSetting key val = setINISetting iniPath "IncrementalSave" key (val as string)
+	local _debug  = false
+	local _subDir = true
+	local _ext    = ".bak"
+	local _sep    = "-V-"
+	local _pad    = 3
+	local _doCmt  = false
 
 	fn padNumber nr padLen = (
 		local s = nr as string
@@ -78,7 +81,7 @@ toolTip:"Incremental Save 2026"
 	fn verifiedSaveFile fName = (
 		local minBytes = 10000
 
-		if not (saveMaxFile fName) then (
+		if not (saveMaxFile fName quiet:true) then (
 			messageBox "File could not be saved!\nRe-save normally." title:"IncrementalSave Error #1" beep:true
 			setSaveRequired true
 			return false
@@ -99,15 +102,25 @@ toolTip:"Incremental Save 2026"
 		true
 	)
 
+	fn copyFileNet src dst = (
+		local ioFile = dotNetClass "System.IO.File"
+		try (
+			ioFile.Copy src dst false
+			true
+		) catch (
+			false
+		)
+	)
+
 	on execute do (
 		-- Rollouts cannot close over outer locals in MaxScript — all shared state must be global.
 		-- Prefixed with incrementalSave_ to avoid namespace collisions.
-		global incrementalSave_debug  = (isReadSetting "debug"    "false") == "true"
-		global incrementalSave_subDir = (isReadSetting "subDir"   "true")  == "true"
-		global incrementalSave_ext    =  isReadSetting "subDirExt" ".bak"
-		global incrementalSave_sep    =  isReadSetting "sepSym"    "_V-"
-		global incrementalSave_pad    = (isReadSetting "padLen"    "3") as integer
-		global incrementalSave_doCmt  = (isReadSetting "doCmt"    "false") == "true"
+		global incrementalSave_debug  = _debug
+		global incrementalSave_subDir = _subDir
+		global incrementalSave_ext    = _ext
+		global incrementalSave_sep    = _sep
+		global incrementalSave_pad    = _pad
+		global incrementalSave_doCmt  = _doCmt
 		global incrementalSave_cmt    = ""
 
 		rollout fileCommentRO "File Comments" (
@@ -147,17 +160,17 @@ toolTip:"Incremental Save 2026"
 			on chk_cmt    changed val do   incrementalSave_doCmt = val
 			on chk_debug  changed val do   incrementalSave_debug = val
 			on btn_ok pressed do (
-				writeSetting "debug"     incrementalSave_debug
-				writeSetting "subDir"    incrementalSave_subDir
-				writeSetting "subDirExt" incrementalSave_ext
-				writeSetting "sepSym"    incrementalSave_sep
-				writeSetting "padLen"    incrementalSave_pad
-				writeSetting "doCmt"     incrementalSave_doCmt
+				_debug  = incrementalSave_debug
+				_subDir = incrementalSave_subDir
+				_ext    = incrementalSave_ext
+				_sep    = incrementalSave_sep
+				_pad    = incrementalSave_pad
+				_doCmt  = incrementalSave_doCmt
 				destroyDialog settingsRO
 			)
 		)
 
-		format "IncrementalSave v1.0 — Modernized 2026 by Stephen Foged (based on v0.5 by M. Breidt)\n"
+		format "IncrementalSave v1.1 — Modernized 2026 by Stephen Foged (based on v0.5 by M. Breidt)\n"
 
 		-- ALT opens settings dialog (v0.5 had this comment wrong — it said CTRL)
 		if keyboard.altPressed then createDialog settingsRO 310 230 modal:true
@@ -217,27 +230,17 @@ toolTip:"Incremental Save 2026"
 		-- Find highest existing version via regex (not limited to current padding width)
 		local nextNr     = (findHighestVersion backupBase incrementalSave_sep) + 1
 		local backupFile = backupBase + incrementalSave_sep + (padNumber nextNr incrementalSave_pad) + ".max"
-		local tempFile   = maxFilePath + baseName + "_ISAVE_TMP_.max"
 
 		if incrementalSave_debug then format "IncrementalSave: backup target = %\n" backupFile
 
-		-- === Atomic rotate ===
-		-- Step 1: save to temp and verify — canonical file is untouched until we know the save worked
-		if not (verifiedSaveFile tempFile) then return undefined
+		-- Step 1: save to canonical — Max's internal pointer stays on the right file,
+		-- title bar unchanged, no temp path added to Open Recent.
+		if not (verifiedSaveFile currentFile) then return undefined
 
-		-- Step 2: rename canonical → versioned backup
-		if not (renameFile currentFile backupFile) then (
-			messageBox ("Could not archive current file:\n" + currentFile + "\n\nTemp save preserved at:\n" + tempFile) \
+		-- Step 2: copy canonical → versioned backup via dotNet (no Max involvement, no recent entry)
+		if not (copyFileNet currentFile backupFile) then (
+			messageBox ("Backup copy failed — scene was saved but no version was archived.\n\nTarget: " + backupFile) \
 				title:"IncrementalSave Error #5" beep:true
-			setSaveRequired true
-			return undefined
-		)
-
-		-- Step 3: promote temp → canonical name
-		if not (renameFile tempFile currentFile) then (
-			messageBox ("Temp rename failed.\n\nBackup at: " + backupFile + "\nTemp at:   " + tempFile + "\n\nRename temp manually to restore your scene.") \
-				title:"IncrementalSave Error #6" beep:true
-			setSaveRequired true
 			return undefined
 		)
 
